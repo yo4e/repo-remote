@@ -1,0 +1,49 @@
+name: Repo Remote
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: repo-remote-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.event.issue.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Apply command
+        id: apply
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REMOTE_TOKEN: ${{ secrets.REPO_REMOTE_TOKEN }}
+          COMMAND_BODY: ${{ github.event.issue.body }}
+        run: node scripts/apply-command.mjs
+
+      - name: Report success and close Issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          SUMMARY: ${{ steps.apply.outputs.summary }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "✅ $SUMMARY"
+          gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
+
+      - name: Report failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "❌ Command failed. See the Actions run: $RUN_URL"
