@@ -16,6 +16,7 @@ jobs:
   apply:
     name: Apply authorized command
     if: >-
+      github.run_attempt == '1' &&
       github.event.issue.state == 'open' &&
       contains(github.event.issue.labels.*.name, 'repo-remote:command') &&
       (
