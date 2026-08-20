@@ -74,6 +74,7 @@ This repository may be public, but commands are deliberately constrained:
 
 - only Issues carrying the explicit `repo-remote:command` label are considered;
 - the repository owner is authorized by default; additional actors require explicit `ALLOWED_ACTORS` configuration;
+- both the Issue author and the account that triggered the current event must be authorized; closed Issues cannot execute;
 - target owner is hard-locked to the control repository owner;
 - every command must match the checked-in versioned JSON Schema;
 - unknown command keys are rejected;
