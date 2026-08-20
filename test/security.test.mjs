@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { parseCommandPacket } from '../scripts/command.mjs';
 import { redactSecrets } from '../scripts/security.mjs';
@@ -64,4 +65,18 @@ test('redacts token values and Authorization headers', () => {
   assert.equal(output.includes(secret), false);
   assert.match(output, /Authorization: \[REDACTED\]/);
   assert.match(output, /Bearer \[REDACTED\]/);
+});
+
+test('workflow gates command execution before PAT exposure', () => {
+  const workflow = fs.readFileSync(new URL('../.github/workflows/repo-remote.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /github\.run_attempt == '1'/);
+  assert.match(workflow, /github\.event\.issue\.state == 'open'/);
+  assert.match(workflow, /repo-remote:command/);
+  assert.match(workflow, /github\.event\.issue\.user\.login/);
+  assert.match(workflow, /github\.actor/);
+  assert.match(workflow, /persist-credentials: false/);
+
+  const validationStep = workflow.indexOf('Validate command before exposing the PAT');
+  const tokenExposure = workflow.indexOf('REMOTE_TOKEN:');
+  assert.ok(validationStep >= 0 && tokenExposure > validationStep);
 });
