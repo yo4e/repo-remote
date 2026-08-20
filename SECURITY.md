@@ -16,10 +16,12 @@ A GitHub App should be preferred in the future when its setup cost is justified,
 
 A command is considered only when the Issue has the label `repo-remote:command`.
 
-The Issue author must also be either:
+Both the Issue author and the account that triggered the current Issue event must be either:
 
 1. the control repository owner, or
 2. explicitly listed in the repository Actions variable `ALLOWED_ACTORS`.
+
+Requiring both prevents an unauthorized collaborator from editing or labeling an authorized user's command Issue and causing that changed packet to execute. Closed Issues are also rejected so the audit trail cannot be re-executed by later edits or label changes.
 
 `ALLOWED_ACTORS` is a JSON array of GitHub logins, for example:
 
@@ -49,7 +51,8 @@ The command workflow:
 
 - listens only to Issue events;
 - requires the explicit `repo-remote:command` label;
-- authorizes the Issue creator before the job runs;
+- authorizes both the Issue creator and the current event actor before the job runs;
+- refuses to execute closed Issues;
 - uses minimal `GITHUB_TOKEN` permissions (`contents: read`, `issues: write`);
 - never exposes the cross-repository PAT to pull-request workflows;
 - validates before the PAT-bearing step;
