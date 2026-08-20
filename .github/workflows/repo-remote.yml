@@ -16,10 +16,15 @@ jobs:
   apply:
     name: Apply authorized command
     if: >-
+      github.event.issue.state == 'open' &&
       contains(github.event.issue.labels.*.name, 'repo-remote:command') &&
       (
         github.event.issue.user.login == github.repository_owner ||
         contains(fromJSON(vars.ALLOWED_ACTORS || '[]'), github.event.issue.user.login)
+      ) &&
+      (
+        github.actor == github.repository_owner ||
+        contains(fromJSON(vars.ALLOWED_ACTORS || '[]'), github.actor)
       )
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -27,6 +32,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Validate command before exposing the PAT
         id: validate
