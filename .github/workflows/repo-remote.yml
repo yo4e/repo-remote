@@ -2,7 +2,7 @@ name: Repo Remote
 
 on:
   issues:
-    types: [opened, edited]
+    types: [opened, edited, labeled]
 
 permissions:
   contents: read
@@ -14,14 +14,45 @@ concurrency:
 
 jobs:
   apply:
-    if: github.event.issue.user.login == github.repository_owner
+    name: Apply authorized command
+    if: >-
+      github.run_attempt == '1' &&
+      github.event.issue.state == 'open' &&
+      contains(github.event.issue.labels.*.name, 'repo-remote:command') &&
+      (
+        github.event.issue.user.login == github.repository_owner ||
+        contains(fromJSON(vars.ALLOWED_ACTORS || '[]'), github.event.issue.user.login)
+      ) &&
+      (
+        github.actor == github.repository_owner ||
+        contains(fromJSON(vars.ALLOWED_ACTORS || '[]'), github.actor)
+      )
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
-      - name: Apply command
+      - name: Validate command before exposing the PAT
+        id: validate
+        env:
+          OWNER: ${{ github.repository_owner }}
+          COMMAND_BODY: ${{ github.event.issue.body }}
+        run: node scripts/validate-command-cli.mjs
+
+      - name: Execute dry run without PAT
+        if: steps.validate.outputs.dry_run == 'true'
+        id: dry_run
+        env:
+          OWNER: ${{ github.repository_owner }}
+          COMMAND_BODY: ${{ github.event.issue.body }}
+        run: node scripts/apply-command.mjs
+
+      - name: Apply command with PAT
+        if: steps.validate.outputs.dry_run != 'true'
         id: apply
         env:
           OWNER: ${{ github.repository_owner }}
@@ -34,7 +65,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          SUMMARY: ${{ steps.apply.outputs.summary }}
+          SUMMARY: ${{ steps.apply.outputs.summary || steps.dry_run.outputs.summary }}
         run: |
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "✅ $SUMMARY"
           gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed

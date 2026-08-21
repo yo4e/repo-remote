@@ -1,0 +1,13 @@
+{
+  "name": "repo-remote",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check scripts/*.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

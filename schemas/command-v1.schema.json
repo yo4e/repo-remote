@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/yo4e/repo-remote/schemas/command-v1.schema.json",
+  "title": "repo-remote command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "repository"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^(?:[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$"
+    },
+    "description": {
+      "type": ["string", "null"],
+      "maxLength": 350
+    },
+    "homepage": {
+      "type": ["string", "null"],
+      "maxLength": 2048
+    },
+    "topics": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 50,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$"
+      }
+    },
+    "dry_run": {
+      "type": "boolean"
+    }
+  },
+  "anyOf": [
+    { "required": ["description"] },
+    { "required": ["homepage"] },
+    { "required": ["topics"] }
+  ]
+}
