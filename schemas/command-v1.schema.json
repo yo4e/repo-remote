@@ -34,6 +34,9 @@
         "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$"
       }
     },
+    "is_template": {
+      "type": "boolean"
+    },
     "dry_run": {
       "type": "boolean"
     }
@@ -41,6 +44,7 @@
   "anyOf": [
     { "required": ["description"] },
     { "required": ["homepage"] },
-    { "required": ["topics"] }
+    { "required": ["topics"] },
+    { "required": ["is_template"] }
   ]
 }
