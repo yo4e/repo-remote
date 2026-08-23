@@ -11,6 +11,7 @@ Only these repository metadata fields are supported:
 - `description` — GitHub About description
 - `homepage` — GitHub About website URL
 - `topics` — GitHub repository topics
+- `is_template` — enable or disable GitHub's Template repository setting
 
 It intentionally does **not** support repository deletion, visibility changes, transfers, archiving, renaming, branch operations, arbitrary GitHub API calls, or arbitrary shell commands.
 
@@ -34,9 +35,21 @@ Create an Issue with the label **`repo-remote:command`** whose body is JSON:
 }
 ```
 
+To enable a repository as a GitHub template:
+
+```json
+{
+  "version": 1,
+  "repository": "Merge-Studio",
+  "is_template": true
+}
+```
+
+Set `is_template` to `false` to turn the setting off again.
+
 `repository` may also be written as `OWNER/Word-Terrarium`. Any owner other than the control repository owner is rejected.
 
-`version` is required and must currently be `1`. Unknown keys are rejected. All mutation fields are optional individually, but at least one of `description`, `homepage`, or `topics` must be present.
+`version` is required and must currently be `1`. Unknown keys are rejected. All mutation fields are optional individually, but at least one of `description`, `homepage`, `topics`, or `is_template` must be present.
 
 To validate a command without changing anything:
 
@@ -64,7 +77,7 @@ The standard Actions `GITHUB_TOKEN` is scoped to this repository and cannot admi
 7. Create the Issue label `repo-remote:command`.
 8. Optional: create an Actions repository variable named `ALLOWED_ACTORS` containing a JSON array of additional GitHub logins, such as `["alice","octocat"]`. Leave it unset or set it to `[]` for owner-only operation.
 
-GitHub groups repository metadata updates and topic replacement under Administration permission, so the credential is broader than the command surface. The code and workflow are therefore the policy boundary.
+GitHub groups repository metadata updates, template-repository toggling, and topic replacement under Administration permission, so the credential is broader than the command surface. The code and workflow are therefore the policy boundary.
 
 See [SECURITY.md](SECURITY.md) for token rotation, actor authorization, workflow hardening, and the optional protected-environment setup.
 
@@ -78,7 +91,7 @@ This repository may be public, but commands are deliberately constrained:
 - target owner is hard-locked to the control repository owner;
 - every command must match the checked-in versioned JSON Schema;
 - unknown command keys are rejected;
-- only `description`, `homepage`, and `topics` are implemented;
+- only `description`, `homepage`, `topics`, and `is_template` are implemented;
 - malformed commands are rejected before the cross-repository PAT is exposed to a step;
 - dry runs execute without the PAT;
 - token values and Authorization headers are redacted from runtime error logs;
