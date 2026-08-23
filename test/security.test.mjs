@@ -23,6 +23,22 @@ test('accepts a valid v1 command', () => {
   assert.equal(parsed.dryRun, true);
 });
 
+test('accepts is_template as a supported mutation', () => {
+  const parsed = parseCommandPacket(
+    JSON.stringify({ version: 1, repository: 'example-repo', is_template: true, dry_run: true }),
+    OWNER,
+  );
+  assert.deepEqual(parsed.changed, ['is_template']);
+  assert.equal(parsed.command.is_template, true);
+});
+
+test('requires is_template to be boolean', () => {
+  assert.throws(
+    () => parseCommandPacket(JSON.stringify({ version: 1, repository: 'example-repo', is_template: 'yes' }), OWNER),
+    /is_template must be boolean/,
+  );
+});
+
 test('requires version 1', () => {
   assert.throws(
     () => parseCommandPacket(JSON.stringify({ repository: 'example-repo', description: 'x' }), OWNER),
@@ -57,6 +73,12 @@ test('normalizes topics after schema validation', () => {
     OWNER,
   );
   assert.deepEqual(parsed.topics, ['creative-coding']);
+});
+
+test('apply command sends is_template through the repository PATCH', () => {
+  const source = fs.readFileSync(new URL('../scripts/apply-command.mjs', import.meta.url), 'utf8');
+  assert.match(source, /hasIsTemplate/);
+  assert.match(source, /payload\.is_template = command\.is_template/);
 });
 
 test('redacts token values and Authorization headers', () => {
