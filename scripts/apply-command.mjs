@@ -62,11 +62,13 @@ async function main() {
   const hasDescription = Object.prototype.hasOwnProperty.call(command, 'description');
   const hasHomepage = Object.prototype.hasOwnProperty.call(command, 'homepage');
   const hasTopics = Object.prototype.hasOwnProperty.call(command, 'topics');
+  const hasIsTemplate = Object.prototype.hasOwnProperty.call(command, 'is_template');
 
-  if (hasDescription || hasHomepage) {
+  if (hasDescription || hasHomepage || hasIsTemplate) {
     const payload = {};
     if (hasDescription) payload.description = command.description;
     if (hasHomepage) payload.homepage = command.homepage;
+    if (hasIsTemplate) payload.is_template = command.is_template;
     await github(`/repos/${encodeURIComponent(OWNER)}/${encodeURIComponent(repo)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
