@@ -177,11 +177,13 @@ export function parseCommandPacket(body, owner) {
   const hasDescription = Object.prototype.hasOwnProperty.call(command, 'description');
   const hasHomepage = Object.prototype.hasOwnProperty.call(command, 'homepage');
   const hasTopics = Object.prototype.hasOwnProperty.call(command, 'topics');
+  const hasIsTemplate = Object.prototype.hasOwnProperty.call(command, 'is_template');
   const topics = hasTopics ? [...new Set(command.topics.map(normalizeTopic))] : undefined;
   const changed = [
     hasDescription && 'description',
     hasHomepage && 'homepage',
     hasTopics && 'topics',
+    hasIsTemplate && 'is_template',
   ].filter(Boolean);
 
   return {
