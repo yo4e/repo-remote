@@ -139,6 +139,19 @@ function normalizeTopic(value) {
   return topic;
 }
 
+function assertSafeKeepBranch(value) {
+  const segments = value.split('/');
+  if (
+    value.includes('..') ||
+    value.includes('//') ||
+    value.endsWith('.') ||
+    value.endsWith('/') ||
+    segments.some((segment) => segment.startsWith('.') || segment.endsWith('.lock'))
+  ) {
+    throw new Error(`branch_cleanup.keep contains an invalid branch name: ${JSON.stringify(value)}`);
+  }
+}
+
 export function parseCommandPacket(body, owner) {
   let command;
   try {
@@ -178,12 +191,26 @@ export function parseCommandPacket(body, owner) {
   const hasHomepage = Object.prototype.hasOwnProperty.call(command, 'homepage');
   const hasTopics = Object.prototype.hasOwnProperty.call(command, 'topics');
   const hasIsTemplate = Object.prototype.hasOwnProperty.call(command, 'is_template');
+  const hasBranchCleanup = Object.prototype.hasOwnProperty.call(command, 'branch_cleanup');
   const topics = hasTopics ? [...new Set(command.topics.map(normalizeTopic))] : undefined;
+  const dryRun = command.dry_run === true;
+
+  if (hasBranchCleanup) {
+    for (const branch of command.branch_cleanup.keep || []) assertSafeKeepBranch(branch);
+    if (!dryRun && command.branch_cleanup.confirm !== true) {
+      throw new Error('branch_cleanup.confirm must be true for a non-dry-run cleanup');
+    }
+    if (hasDescription || hasHomepage || hasTopics || hasIsTemplate) {
+      throw new Error('branch_cleanup must be submitted as a standalone command');
+    }
+  }
+
   const changed = [
     hasDescription && 'description',
     hasHomepage && 'homepage',
     hasTopics && 'topics',
     hasIsTemplate && 'is_template',
+    hasBranchCleanup && 'branch_cleanup',
   ].filter(Boolean);
 
   return {
@@ -192,6 +219,12 @@ export function parseCommandPacket(body, owner) {
     target: `${owner}/${repo}`,
     changed,
     topics,
-    dryRun: command.dry_run === true,
+    branchCleanup: hasBranchCleanup
+      ? {
+          mode: command.branch_cleanup.mode,
+          keep: [...(command.branch_cleanup.keep || [])],
+        }
+      : undefined,
+    dryRun,
   };
 }

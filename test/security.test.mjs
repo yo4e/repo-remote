@@ -16,6 +16,19 @@ function packet(overrides = {}) {
   });
 }
 
+function cleanupPacket(overrides = {}) {
+  return JSON.stringify({
+    version: 1,
+    repository: 'example-repo',
+    branch_cleanup: {
+      mode: 'merged',
+      keep: ['release/publish-v0.1.0'],
+    },
+    dry_run: true,
+    ...overrides,
+  });
+}
+
 test('accepts a valid v1 command', () => {
   const parsed = parseCommandPacket(packet(), OWNER);
   assert.equal(parsed.target, 'yo4e/example-repo');
@@ -36,6 +49,69 @@ test('requires is_template to be boolean', () => {
   assert.throws(
     () => parseCommandPacket(JSON.stringify({ version: 1, repository: 'example-repo', is_template: 'yes' }), OWNER),
     /is_template must be boolean/,
+  );
+});
+
+test('accepts a valid PAT-free branch cleanup dry run', () => {
+  const parsed = parseCommandPacket(cleanupPacket(), OWNER);
+  assert.deepEqual(parsed.changed, ['branch_cleanup']);
+  assert.deepEqual(parsed.branchCleanup, {
+    mode: 'merged',
+    keep: ['release/publish-v0.1.0'],
+  });
+  assert.equal(parsed.dryRun, true);
+});
+
+test('requires explicit confirmation before a destructive branch cleanup', () => {
+  assert.throws(
+    () => parseCommandPacket(cleanupPacket({ dry_run: false }), OWNER),
+    /branch_cleanup\.confirm must be true/,
+  );
+
+  const parsed = parseCommandPacket(
+    cleanupPacket({
+      branch_cleanup: { mode: 'merged', keep: [], confirm: true },
+      dry_run: false,
+    }),
+    OWNER,
+  );
+  assert.equal(parsed.dryRun, false);
+});
+
+test('rejects unknown cleanup keys and unsupported destructive shapes', () => {
+  assert.throws(
+    () => parseCommandPacket(cleanupPacket({ branch_cleanup: { mode: 'merged', branch: 'feature/x' } }), OWNER),
+    /branch_cleanup\.branch is not allowed/,
+  );
+  assert.throws(
+    () => parseCommandPacket(cleanupPacket({ branch_cleanup: { mode: 'all' } }), OWNER),
+    /branch_cleanup\.mode must equal "merged"/,
+  );
+  assert.throws(
+    () => parseCommandPacket(cleanupPacket({ api_path: '/repos/yo4e/example-repo/git/refs/heads/main' }), OWNER),
+    /api_path is not allowed/,
+  );
+});
+
+test('rejects invalid keep entries and mixed mutation commands', () => {
+  assert.throws(
+    () => parseCommandPacket(cleanupPacket({ branch_cleanup: { mode: 'merged', keep: ['../main'] } }), OWNER),
+    /keep\[0\] has an invalid format/,
+  );
+  assert.throws(
+    () => parseCommandPacket(cleanupPacket({ branch_cleanup: { mode: 'merged', keep: ['feature//x'] } }), OWNER),
+    /invalid branch name/,
+  );
+  assert.throws(
+    () => parseCommandPacket(cleanupPacket({ description: 'combined' }), OWNER),
+    /standalone command/,
+  );
+});
+
+test('branch cleanup preserves the cross-owner restriction', () => {
+  assert.throws(
+    () => parseCommandPacket(cleanupPacket({ repository: 'someone-else/example-repo' }), OWNER),
+    /target owner must be yo4e/,
   );
 });
 
@@ -89,6 +165,17 @@ test('redacts token values and Authorization headers', () => {
   assert.match(output, /Bearer \[REDACTED\]/);
 });
 
+test('documents the exact token permissions and selected-repository boundary', () => {
+  for (const filename of ['README.md', 'SECURITY.md']) {
+    const source = fs.readFileSync(new URL(`../${filename}`, import.meta.url), 'utf8');
+    assert.match(source, /Administration[^\n]*Read and write/i);
+    assert.match(source, /Contents[^\n]*Read and write/i);
+    assert.match(source, /Pull requests[^\n]*Read(?:-only)?/i);
+    assert.match(source, /Selected repositories/i);
+    assert.match(source, /no arbitrary Contents|No arbitrary Contents/i);
+  }
+});
+
 test('pins third-party Actions to full commit SHAs', () => {
   const workflows = new URL('../.github/workflows/', import.meta.url);
 
@@ -114,6 +201,8 @@ test('workflow gates command execution before PAT exposure', () => {
   assert.match(workflow, /persist-credentials: false/);
 
   const validationStep = workflow.indexOf('Validate command before exposing the PAT');
+  const dryRunStep = workflow.indexOf('Execute dry run without PAT');
   const tokenExposure = workflow.indexOf('REMOTE_TOKEN:');
-  assert.ok(validationStep >= 0 && tokenExposure > validationStep);
+  assert.ok(validationStep >= 0 && dryRunStep > validationStep && tokenExposure > dryRunStep);
+  assert.doesNotMatch(workflow.slice(dryRunStep, tokenExposure), /REMOTE_TOKEN:/);
 });
