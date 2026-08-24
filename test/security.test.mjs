@@ -89,6 +89,21 @@ test('redacts token values and Authorization headers', () => {
   assert.match(output, /Bearer \[REDACTED\]/);
 });
 
+test('pins third-party Actions to full commit SHAs', () => {
+  const workflows = new URL('../.github/workflows/', import.meta.url);
+
+  for (const filename of fs.readdirSync(workflows).filter((name) => /\.ya?ml$/.test(name))) {
+    const workflow = fs.readFileSync(new URL(filename, workflows), 'utf8');
+
+    for (const [index, line] of workflow.split('\n').entries()) {
+      const action = line.match(/^\s*uses:\s*([^\s#]+)/)?.[1];
+      if (!action || action.startsWith('./')) continue;
+
+      assert.match(action, /^[^@\s]+@[0-9a-f]{40}$/, `${filename}:${index + 1} must pin uses: to a full commit SHA`);
+    }
+  }
+});
+
 test('workflow gates command execution before PAT exposure', () => {
   const workflow = fs.readFileSync(new URL('../.github/workflows/repo-remote.yml', import.meta.url), 'utf8');
   assert.match(workflow, /github\.run_attempt == '1'/);
