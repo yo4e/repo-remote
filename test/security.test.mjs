@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+import { executeCommand } from '../scripts/apply-command.mjs';
 import { parseCommandPacket } from '../scripts/command.mjs';
 import { redactSecrets } from '../scripts/security.mjs';
 
@@ -49,6 +50,28 @@ test('requires is_template to be boolean', () => {
   assert.throws(
     () => parseCommandPacket(JSON.stringify({ version: 1, repository: 'example-repo', is_template: 'yes' }), OWNER),
     /is_template must be boolean/,
+  );
+});
+
+test('accepts delete_branch_on_merge true and false as supported mutations', () => {
+  for (const value of [true, false]) {
+    const parsed = parseCommandPacket(
+      JSON.stringify({ version: 1, repository: 'example-repo', delete_branch_on_merge: value, dry_run: true }),
+      OWNER,
+    );
+    assert.deepEqual(parsed.changed, ['delete_branch_on_merge']);
+    assert.equal(parsed.command.delete_branch_on_merge, value);
+  }
+});
+
+test('requires delete_branch_on_merge to be boolean', () => {
+  assert.throws(
+    () =>
+      parseCommandPacket(
+        JSON.stringify({ version: 1, repository: 'example-repo', delete_branch_on_merge: 'yes' }),
+        OWNER,
+      ),
+    /delete_branch_on_merge must be boolean/,
   );
 });
 
@@ -106,6 +129,10 @@ test('rejects invalid keep entries and mixed mutation commands', () => {
     () => parseCommandPacket(cleanupPacket({ description: 'combined' }), OWNER),
     /standalone command/,
   );
+  assert.throws(
+    () => parseCommandPacket(cleanupPacket({ delete_branch_on_merge: true }), OWNER),
+    /standalone command/,
+  );
 });
 
 test('branch cleanup preserves the cross-owner restriction', () => {
@@ -155,6 +182,31 @@ test('apply command sends is_template through the repository PATCH', () => {
   const source = fs.readFileSync(new URL('../scripts/apply-command.mjs', import.meta.url), 'utf8');
   assert.match(source, /hasIsTemplate/);
   assert.match(source, /payload\.is_template = command\.is_template/);
+});
+
+test('apply command sends only delete_branch_on_merge in its repository PATCH', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+
+  const result = await executeCommand({
+    owner: OWNER,
+    body: JSON.stringify({
+      version: 1,
+      repository: 'example-repo',
+      delete_branch_on_merge: false,
+    }),
+    remoteToken: 'test-token',
+    fetchImpl,
+  });
+
+  assert.equal(result.summary, 'Updated yo4e/example-repo: delete_branch_on_merge');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.github.com/repos/yo4e/example-repo');
+  assert.equal(calls[0].options.method, 'PATCH');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { delete_branch_on_merge: false });
 });
 
 test('redacts token values and Authorization headers', () => {
