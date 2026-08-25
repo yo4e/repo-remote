@@ -1,0 +1,24 @@
+name: repo-remote command
+description: Submit a validated repo-remote JSON command packet
+title: "repo-remote command: <operation>"
+labels: ["repo-remote:command"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form only for repo-remote command JSON.
+        Unauthorized actors are rejected even if this label is present.
+  - type: textarea
+    id: command
+    attributes:
+      label: Command JSON
+      description: Paste the command packet JSON.
+      placeholder: |
+        {
+          "version": 1,
+          "repository": "example-repo",
+          "description": "Updated description",
+          "dry_run": true
+        }
+    validations:
+      required: true

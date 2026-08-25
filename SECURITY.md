@@ -14,6 +14,8 @@ Prefer a fine-grained personal access token with access to only the repositories
 
 Store the token as the Actions secret `REPO_REMOTE_TOKEN`. Do not place it in Issues, repository variables, workflow inputs, comments, artifacts, or source files. Rotate or revoke it immediately if exposure is suspected.
 
+If this repository is copied from a template, the copy runs on that owner's own Actions account and does not inherit upstream secrets. Every copy must create and store its own `REPO_REMOTE_TOKEN`.
+
 A GitHub App should be preferred in the future when its setup cost is justified, because installation tokens can provide a smaller and more revocable blast radius than a long-lived PAT.
 
 ## Who may issue commands

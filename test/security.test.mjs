@@ -258,3 +258,12 @@ test('workflow gates command execution before PAT exposure', () => {
   assert.ok(validationStep >= 0 && dryRunStep > validationStep && tokenExposure > dryRunStep);
   assert.doesNotMatch(workflow.slice(dryRunStep, tokenExposure), /REMOTE_TOKEN:/);
 });
+
+test('documents template-copy ownership, non-inherited token setup, and Actions billing ownership', () => {
+  const source = fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.match(source, /template/i);
+  assert.match(source, /inherit upstream secrets/i);
+  assert.match(source, /REPO_REMOTE_TOKEN/i);
+  assert.match(source, /runs inside the new owner's own repository and Actions account/i);
+  assert.match(source, /Workflow usage costs are paid by the repository that runs the workflow/i);
+});

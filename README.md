@@ -4,6 +4,19 @@ A tiny control repository for safely updating allowlisted GitHub repository sett
 
 `repo-remote` is a bridge: an authorized, explicitly labeled Issue becomes a narrowly scoped command, and GitHub Actions applies that command to another repository owned by the control-repository owner.
 
+## Architecture flow
+
+```mermaid
+flowchart TD
+  A[Authorized Issue with repo-remote:command label] --> B[Workflow gate\n(author + actor allowlist)]
+  B --> C[Schema + semantic validation\n(PAT-free)]
+  C --> D{dry_run?}
+  D -->|yes| E[Read-only execution\n(no REPO_REMOTE_TOKEN)]
+  D -->|no| F[Allowlisted operation execution\n(with REPO_REMOTE_TOKEN)]
+  E --> G[Audit comment + close]
+  F --> G
+```
+
 ## What it can change
 
 Only these operations are supported:
@@ -21,14 +34,14 @@ The cleanup operation is intentionally narrower than general branch deletion. It
 
 ## Command format
 
-Create an Issue with the label **`repo-remote:command`** whose body is JSON:
+Create an Issue with the label **`repo-remote:command`** whose body is JSON (the included Issue form can pre-apply this label):
 
 ```json
 {
   "version": 1,
   "repository": "Word-Terrarium",
   "description": "A tiny word terrarium for watching semantic relationships grow.",
-  "homepage": "https://yo4e.github.io/Word-Terrarium/",
+  "homepage": "https://example.com/word-terrarium/",
   "topics": [
     "creative-coding",
     "semantic-network",
@@ -128,7 +141,13 @@ The standard Actions `GITHUB_TOKEN` is scoped to this repository and cannot admi
 7. Create the Issue label `repo-remote:command`.
 8. Optional: create an Actions repository variable named `ALLOWED_ACTORS` containing a JSON array of additional GitHub logins, such as `["alice","octocat"]`. Leave it unset or set it to `[]` for owner-only operation.
 
+If you use this repository as a **GitHub template**, each copy runs inside the new owner's own repository and Actions account. Template copies do **not** inherit upstream secrets, including `REPO_REMOTE_TOKEN`; each user must create and store their own token in their own repository settings.
+
 GitHub groups repository metadata updates, template-repository toggling, and automatic merged-head-branch deletion under Administration permission. Its [Delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference) endpoint requires Contents write, while [List pull requests](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests) requires Pull requests read. Contents write is therefore needed only for the optional `branch_cleanup` path, not for `delete_branch_on_merge`. Contents write is a material increase in credential blast radius even though repo-remote implements no arbitrary Contents or ref operation. Keep the token on **Selected repositories**; the checked-in schema, parser, planner, and workflow remain the narrower policy boundary.
+
+`REPO_REMOTE_TOKEN` is the primary blast-radius concern. Prefer short token expiry, rotate regularly, and revoke immediately if you suspect exposure.
+
+Workflow usage costs are paid by the repository that runs the workflow (your template copy), not by the upstream `yo4e/repo-remote` repository. For public repositories, GitHub-hosted standard runner usage is currently free, subject to GitHub policy changes.
 
 See [SECURITY.md](SECURITY.md) for token rotation, actor authorization, workflow hardening, and the optional protected-environment setup.
 
@@ -159,6 +178,13 @@ ChatGPT's connected GitHub tooling and many other agents can create Issues even 
 
 The Issue history is also a useful operation log: every requested metadata change remains visible and attributable.
 
+## Troubleshooting
+
+- **Workflow did not run:** confirm the Issue is open, has the `repo-remote:command` label, and both the Issue author and event actor are authorized by owner/default policy or `ALLOWED_ACTORS`.
+- **`REPO_REMOTE_TOKEN is not configured`:** add the secret in **Settings → Secrets and variables → Actions** of your own repository copy.
+- **Cross-owner rejected:** set `repository` to either `name` or `OWNER/name` where `OWNER` matches `github.repository_owner`.
+- **Dry-run cleanup fails on private target:** dry-run cleanup is PAT-free and needs public read visibility.
+
 ## Files
 
 ```text
@@ -174,6 +200,8 @@ SECURITY.md                        # token/actor/workflow security guidance
 README.md                          # protocol and setup
 ```
 
-## Author / design
+## Release notes
 
-Designed by 月野テンプレクス with 山田佳江 as a tiny piece of infrastructure for the `yo4e` GitHub toy box.
+This project follows semantic versioning. See [CHANGELOG.md](CHANGELOG.md) for release history (`v0.1.0` is the first public OSS release baseline).
+
+See also: [LICENSE](LICENSE), [SECURITY.md](SECURITY.md), and [CONTRIBUTING.md](CONTRIBUTING.md).

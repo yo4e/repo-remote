@@ -11,6 +11,9 @@ import { parseCommandPacket } from './command.mjs';
 import { redactSecrets } from './security.mjs';
 
 const DEFAULT_API_BASE = 'https://api.github.com';
+const PACKAGE_JSON_URL = new URL('../package.json', import.meta.url);
+const PACKAGE_VERSION = JSON.parse(fs.readFileSync(PACKAGE_JSON_URL, 'utf8')).version || '0.0.0';
+const USER_AGENT = `repo-remote/${PACKAGE_VERSION}`;
 
 export class GitHubApiError extends Error {
   constructor(status, path, detail) {
@@ -33,7 +36,7 @@ export function createGitHubClient({ token = '', fetchImpl = globalThis.fetch, a
     const headers = {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2026-03-10',
-      'User-Agent': 'repo-remote/0.x',
+      'User-Agent': USER_AGENT,
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     };

@@ -227,6 +227,22 @@ test('GitHub client rejects full URLs and non-repository API paths', async () =>
   await assert.rejects(() => github('/repos/../../user'), /escaped the repository endpoint boundary/);
 });
 
+test('GitHub client uses repo-remote semantic-version User-Agent', async () => {
+  const calls = [];
+  const github = createGitHubClient({
+    token: 'test-token',
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+  });
+
+  await github('/repos/yo4e/example-repo');
+
+  const packageJson = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(calls[0].options.headers['User-Agent'], `repo-remote/${packageJson.version}`);
+});
+
 test('audit report names candidates and skip reasons without raw API output', () => {
   const report = formatBranchCleanupReport({
     target: TARGET,
