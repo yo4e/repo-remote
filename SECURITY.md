@@ -1,16 +1,16 @@
 # Security
 
-`repo-remote` is a policy boundary around a credential that can modify repository metadata and delete narrowly proven branch refs in other repositories. Treat configuration changes to the workflow, command schema, parser, branch-cleanup planner, and token permissions as security-sensitive.
+`repo-remote` is a policy boundary around a credential that can modify narrowly allowlisted repository settings and, when the optional cleanup path is enabled, delete narrowly proven branch refs in other repositories. Treat configuration changes to the workflow, command schema, parser, branch-cleanup planner, and token permissions as security-sensitive.
 
 ## Authentication and minimum permissions
 
 Prefer a fine-grained personal access token with access to only the repositories that `repo-remote` must control. Grant only the permissions required by the operations you enable:
 
-- **Administration: Read and write** for supported repository metadata and template-setting changes
-- **Contents: Read and write** for branch listing and the Git ref deletion endpoint
-- **Pull requests: Read-only** for merged/open PR evidence
+- **Administration: Read and write** for supported repository metadata, template-setting changes, and `delete_branch_on_merge`
+- **Contents: Read and write** only for `branch_cleanup`, for branch listing and the Git ref deletion endpoint
+- **Pull requests: Read-only** only for `branch_cleanup`, for merged/open PR evidence
 
-GitHub documents Contents write as the required permission for [Delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference), Contents read for [List branches](https://docs.github.com/en/rest/branches/branches#list-branches), and Pull requests read for [List pull requests](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests). Contents write can modify substantially more repository state than repo-remote exposes. Keep **Selected repositories** as the token's repository access, and treat the schema, parser, pure candidate planner, derived endpoint construction, and workflow gates as the narrower allowlist. No arbitrary Contents operation, ref, or REST path is accepted.
+`delete_branch_on_merge` uses GitHub's allowlisted Update a repository endpoint and does not directly delete a ref, so enabling or disabling **Automatically delete head branches** does not require Contents write by itself. GitHub documents Contents write as the required permission for [Delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference), Contents read for [List branches](https://docs.github.com/en/rest/branches/branches#list-branches), and Pull requests read for [List pull requests](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests). Contents write can modify substantially more repository state than repo-remote exposes. Keep **Selected repositories** as the token's repository access, and treat the schema, parser, pure candidate planner, derived endpoint construction, and workflow gates as the narrower allowlist. No arbitrary Contents operation, ref, or REST path is accepted.
 
 Store the token as the Actions secret `REPO_REMOTE_TOKEN`. Do not place it in Issues, repository variables, workflow inputs, comments, artifacts, or source files. Rotate or revoke it immediately if exposure is suspected.
 
@@ -41,7 +41,7 @@ Do not use the label as the only authorization mechanism. The actor allowlist is
 
 Commands use the versioned schema in `schemas/command-v1.schema.json` and must include `"version": 1`. Unknown keys are rejected. The runtime validator intentionally supports only the JSON Schema keywords used by the checked-in schema and refuses unsupported schema keywords, keeping the policy surface small and dependency-free.
 
-The parser also enforces semantic checks that are awkward to express safely in the schema, including owner matching, allowed homepage protocols, safe `keep` entries, standalone cleanup commands, and explicit `confirm: true` for non-dry-run cleanup. Missing confirmation therefore fails in the PAT-free validation step.
+Repository-setting PATCH payloads are built only from individually allowlisted fields. `delete_branch_on_merge` is a strict boolean and therefore cannot be used to inject an arbitrary repository setting, HTTP method, host, or API path. The parser also enforces semantic checks that are awkward to express safely in the schema, including owner matching, allowed homepage protocols, safe `keep` entries, standalone cleanup commands, and explicit `confirm: true` for non-dry-run cleanup. Missing confirmation therefore fails in the PAT-free validation step.
 
 ## Merged-branch cleanup boundary
 
@@ -56,6 +56,8 @@ A candidate is eligible only when all of these facts hold:
 The SHA equality prevents a merged branch name that was reused or advanced after merge from authorizing deletion of newer commits. Before each DELETE, repo-remote fetches the PR evidence again, checks open PRs again, resolves the current default again, and fetches the current branch head/protection state again. If any fact changed, the branch is skipped. The GitHub endpoint also refuses default-branch deletion, providing a final server-side guard against the unavoidable race between the last check and DELETE.
 
 Git ancestry, branch-name similarity, fork PRs, closed-unmerged PRs, merges into non-default bases, tags, arbitrary refs, explicit PR-less deletions, wildcards, prefixes, and age rules are never deletion evidence. Planning is bounded to 200 current branches and 5,000 PR records, and the Issue audit report is bounded to 60,000 bytes; larger operations fail closed before deletion.
+
+For routine future branch hygiene, prefer `delete_branch_on_merge: true` over repeated cleanup commands. It changes only GitHub's repository-level automatic head-branch deletion setting; it does not retroactively remove already-stale branches and it does not broaden repo-remote to arbitrary ref deletion.
 
 ## Secret handling
 
@@ -81,7 +83,7 @@ For higher-risk installations, configure a protected GitHub Environment with req
 
 ## Scope boundaries
 
-The current release supports repository description, homepage, topics, template-setting toggles, and only the fixed merged-branch cleanup described above. It does not accept arbitrary REST paths, shell commands, git remotes, repository deletion, visibility changes, transfers, arbitrary branch deletion, user-selected refs, branch protection/ruleset changes, ref updates, tags, or arbitrary Contents operations.
+The current release supports repository description, homepage, topics, template-setting toggles, the `delete_branch_on_merge` automatic head-branch deletion setting, and only the fixed merged-branch cleanup described above. It does not accept arbitrary REST paths, shell commands, git remotes, repository deletion, visibility changes, transfers, arbitrary branch deletion, user-selected refs, branch protection/ruleset changes, ref updates, tags, or arbitrary Contents operations.
 
 Wiki operations are not implemented yet. When they are added, they must derive the remote exclusively from the validated owner/repository, normalize page filenames, reject traversal and remote URLs, avoid shell interpolation for page contents, and impose explicit page-size limits before any Wiki write capability is enabled.
 
