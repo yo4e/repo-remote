@@ -191,6 +191,7 @@ export function parseCommandPacket(body, owner) {
   const hasHomepage = Object.prototype.hasOwnProperty.call(command, 'homepage');
   const hasTopics = Object.prototype.hasOwnProperty.call(command, 'topics');
   const hasIsTemplate = Object.prototype.hasOwnProperty.call(command, 'is_template');
+  const hasDeleteBranchOnMerge = Object.prototype.hasOwnProperty.call(command, 'delete_branch_on_merge');
   const hasBranchCleanup = Object.prototype.hasOwnProperty.call(command, 'branch_cleanup');
   const topics = hasTopics ? [...new Set(command.topics.map(normalizeTopic))] : undefined;
   const dryRun = command.dry_run === true;
@@ -200,7 +201,7 @@ export function parseCommandPacket(body, owner) {
     if (!dryRun && command.branch_cleanup.confirm !== true) {
       throw new Error('branch_cleanup.confirm must be true for a non-dry-run cleanup');
     }
-    if (hasDescription || hasHomepage || hasTopics || hasIsTemplate) {
+    if (hasDescription || hasHomepage || hasTopics || hasIsTemplate || hasDeleteBranchOnMerge) {
       throw new Error('branch_cleanup must be submitted as a standalone command');
     }
   }
@@ -210,6 +211,7 @@ export function parseCommandPacket(body, owner) {
     hasHomepage && 'homepage',
     hasTopics && 'topics',
     hasIsTemplate && 'is_template',
+    hasDeleteBranchOnMerge && 'delete_branch_on_merge',
     hasBranchCleanup && 'branch_cleanup',
   ].filter(Boolean);
 
