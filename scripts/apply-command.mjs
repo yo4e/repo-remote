@@ -174,12 +174,14 @@ export async function executeCommand({
   const hasHomepage = Object.prototype.hasOwnProperty.call(command, 'homepage');
   const hasTopics = Object.prototype.hasOwnProperty.call(command, 'topics');
   const hasIsTemplate = Object.prototype.hasOwnProperty.call(command, 'is_template');
+  const hasDeleteBranchOnMerge = Object.prototype.hasOwnProperty.call(command, 'delete_branch_on_merge');
 
-  if (hasDescription || hasHomepage || hasIsTemplate) {
+  if (hasDescription || hasHomepage || hasIsTemplate || hasDeleteBranchOnMerge) {
     const payload = {};
     if (hasDescription) payload.description = command.description;
     if (hasHomepage) payload.homepage = command.homepage;
     if (hasIsTemplate) payload.is_template = command.is_template;
+    if (hasDeleteBranchOnMerge) payload.delete_branch_on_merge = command.delete_branch_on_merge;
     await github(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
