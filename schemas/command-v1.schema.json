@@ -37,6 +37,9 @@
     "is_template": {
       "type": "boolean"
     },
+    "delete_branch_on_merge": {
+      "type": "boolean"
+    },
     "branch_cleanup": {
       "type": "object",
       "additionalProperties": false,
@@ -70,6 +73,7 @@
     { "required": ["homepage"] },
     { "required": ["topics"] },
     { "required": ["is_template"] },
+    { "required": ["delete_branch_on_merge"] },
     { "required": ["branch_cleanup"] }
   ]
 }

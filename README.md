@@ -12,7 +12,10 @@ Only these operations are supported:
 - `homepage` — GitHub About website URL
 - `topics` — GitHub repository topics
 - `is_template` — enable or disable GitHub's Template repository setting
+- `delete_branch_on_merge` — enable or disable GitHub's **Automatically delete head branches** setting
 - `branch_cleanup.mode: "merged"` — prune current branch heads that GitHub records as same-repository PRs merged into the current default branch
+
+For day-to-day branch hygiene, prefer `delete_branch_on_merge: true`: configure it once and let GitHub remove future merged PR head branches automatically. `branch_cleanup` is intended as an occasional cleanup tool for repositories that already accumulated stale merged branches.
 
 The cleanup operation is intentionally narrower than general branch deletion. It does **not** accept an explicit branch to delete, a ref, a wildcard, a prefix, an age, or an API path. Repository deletion, visibility changes, transfers, archiving, renaming, arbitrary GitHub API calls, arbitrary Contents operations, tags, ref updates, and arbitrary shell commands remain unsupported.
 
@@ -48,6 +51,18 @@ To enable a repository as a GitHub template:
 
 Set `is_template` to `false` to turn the setting off again.
 
+To make GitHub automatically delete a pull request's head branch after merge:
+
+```json
+{
+  "version": 1,
+  "repository": "xlsx-ray",
+  "delete_branch_on_merge": true
+}
+```
+
+Set `delete_branch_on_merge` to `false` to disable automatic head-branch deletion again. This is a repository setting handled through the same allowlisted repository PATCH path as other Administration-backed settings; it does not directly delete a Git ref and does not require Contents write by itself.
+
 To inspect safely removable merged branches without exposing the cross-repository PAT:
 
 ```json
@@ -82,7 +97,7 @@ Dry-run cleanup reports candidates and skip reasons using GitHub's public read e
 
 `repository` may also be written as `OWNER/Word-Terrarium`. Any owner other than the control repository owner is rejected.
 
-`version` is required and must currently be `1`. Unknown keys are rejected. All mutation fields are optional individually, but at least one of `description`, `homepage`, `topics`, `is_template`, or `branch_cleanup` must be present. Because cleanup is destructive, `branch_cleanup` cannot be combined with metadata changes in one command.
+`version` is required and must currently be `1`. Unknown keys are rejected. All mutation fields are optional individually, but at least one of `description`, `homepage`, `topics`, `is_template`, `delete_branch_on_merge`, or `branch_cleanup` must be present. Because cleanup is destructive, `branch_cleanup` cannot be combined with repository-setting changes in one command.
 
 To validate a command without changing anything:
 
@@ -105,15 +120,15 @@ The standard Actions `GITHUB_TOKEN` is scoped to this repository and cannot admi
 2. Set the resource owner to the account that owns the repositories to control.
 3. Prefer **Selected repositories** and grant access only to repositories that `repo-remote` needs to manage. Use broader access only when it is genuinely required.
 4. Grant only the repository permissions needed by the enabled operations:
-   - **Administration — Read and write** for description, homepage, topics, and `is_template`.
-   - **Contents — Read and write** for listing branches and deleting a proven branch ref.
-   - **Pull requests — Read-only** for checking merged and open PR state.
+   - **Administration — Read and write** for description, homepage, topics, `is_template`, and `delete_branch_on_merge`.
+   - **Contents — Read and write** only when using `branch_cleanup`, for listing branches and deleting a proven branch ref.
+   - **Pull requests — Read-only** only when using `branch_cleanup`, for checking merged and open PR state.
 5. In this repository, open **Settings → Secrets and variables → Actions → New repository secret**.
 6. Name the secret `REPO_REMOTE_TOKEN` and paste the token.
 7. Create the Issue label `repo-remote:command`.
 8. Optional: create an Actions repository variable named `ALLOWED_ACTORS` containing a JSON array of additional GitHub logins, such as `["alice","octocat"]`. Leave it unset or set it to `[]` for owner-only operation.
 
-GitHub groups repository metadata updates, template-repository toggling, and topic replacement under Administration permission. Its [Delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference) endpoint requires Contents write, while [List pull requests](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests) requires Pull requests read. Contents write is a material increase in credential blast radius even though repo-remote implements no arbitrary Contents or ref operation. Keep the token on **Selected repositories**; the checked-in schema, parser, planner, and workflow remain the narrower policy boundary.
+GitHub groups repository metadata updates, template-repository toggling, and automatic merged-head-branch deletion under Administration permission. Its [Delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference) endpoint requires Contents write, while [List pull requests](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests) requires Pull requests read. Contents write is therefore needed only for the optional `branch_cleanup` path, not for `delete_branch_on_merge`. Contents write is a material increase in credential blast radius even though repo-remote implements no arbitrary Contents or ref operation. Keep the token on **Selected repositories**; the checked-in schema, parser, planner, and workflow remain the narrower policy boundary.
 
 See [SECURITY.md](SECURITY.md) for token rotation, actor authorization, workflow hardening, and the optional protected-environment setup.
 
@@ -127,7 +142,8 @@ This repository may be public, but commands are deliberately constrained:
 - target owner is hard-locked to the control repository owner;
 - every command must match the checked-in versioned JSON Schema;
 - unknown command keys are rejected;
-- only `description`, `homepage`, `topics`, `is_template`, and the fixed `branch_cleanup: merged` operation are implemented;
+- only `description`, `homepage`, `topics`, `is_template`, `delete_branch_on_merge`, and the fixed `branch_cleanup: merged` operation are implemented;
+- repository PATCH payloads are constructed only from those individually allowlisted fields; arbitrary settings objects are never accepted;
 - malformed commands are rejected before the cross-repository PAT is exposed to a step;
 - non-dry-run cleanup is rejected before PAT exposure unless `confirm: true` is present;
 - cleanup candidates require exact same-repository merged-PR evidence into the current default at the current branch head, and the destructive boundary is rechecked before deletion;
