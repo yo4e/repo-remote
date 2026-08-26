@@ -1,16 +1,17 @@
 # Security
 
-`repo-remote` is a policy boundary around a credential that can modify narrowly allowlisted repository settings and, when the optional cleanup path is enabled, delete narrowly proven branch refs in other repositories. Treat configuration changes to the workflow, command schema, parser, branch-cleanup planner, and token permissions as security-sensitive.
+`repo-remote` is a policy boundary around a credential that can modify narrowly allowlisted repository settings, manage narrowly scoped GitHub Wiki pages, and, when the optional cleanup path is enabled, delete narrowly proven branch refs in other repositories. Treat configuration changes to the workflow, command schema, parser, Wiki runtime, branch-cleanup planner, and token permissions as security-sensitive.
 
 ## Authentication and minimum permissions
 
 Prefer a fine-grained personal access token with access to only the repositories that `repo-remote` must control. Grant only the permissions required by the operations you enable:
 
 - **Administration: Read and write** for supported repository metadata, template-setting changes, and `delete_branch_on_merge`
-- **Contents: Read and write** only for `branch_cleanup`, for branch listing and the Git ref deletion endpoint
+- **Contents: Read-only** for `wiki.read` / `wiki.list` when no Wiki write capability is needed
+- **Contents: Read and write** for `wiki.upsert` and `branch_cleanup`
 - **Pull requests: Read-only** only for `branch_cleanup`, for merged/open PR evidence
 
-`delete_branch_on_merge` uses GitHub's allowlisted Update a repository endpoint and does not directly delete a ref, so enabling or disabling **Automatically delete head branches** does not require Contents write by itself. GitHub documents Contents write as the required permission for [Delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference), Contents read for [List branches](https://docs.github.com/en/rest/branches/branches#list-branches), and Pull requests read for [List pull requests](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests). Contents write can modify substantially more repository state than repo-remote exposes. Keep **Selected repositories** as the token's repository access, and treat the schema, parser, pure candidate planner, derived endpoint construction, and workflow gates as the narrower allowlist. No arbitrary Contents operation, ref, or REST path is accepted.
+`delete_branch_on_merge` uses GitHub's allowlisted Update a repository endpoint and does not directly delete a ref, so enabling or disabling **Automatically delete head branches** does not require Contents write by itself. GitHub documents Contents write as the required permission for [Delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference), Contents read for [List branches](https://docs.github.com/en/rest/branches/branches#list-branches), and Pull requests read for [List pull requests](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests). Wiki operations use the Wiki's Git repository and therefore require repository Contents access appropriate to the requested read/write behavior. Contents write can modify substantially more repository state than repo-remote exposes. Keep **Selected repositories** as the token's repository access, and treat the schema, parser, fixed Wiki remote derivation, Wiki filename/content guards, pure branch candidate planner, derived endpoint construction, and workflow gates as the narrower allowlist. No arbitrary Contents operation, ref, REST path, Git remote, or filesystem path is accepted.
 
 Store the token as the Actions secret `REPO_REMOTE_TOKEN`. Do not place it in Issues, repository variables, workflow inputs, comments, artifacts, or source files. Rotate or revoke it immediately if exposure is suspected.
 
@@ -43,6 +44,28 @@ Commands use the versioned schema in `schemas/command-v1.schema.json` and must i
 
 Repository-setting PATCH payloads are built only from individually allowlisted fields. `delete_branch_on_merge` is a strict boolean and therefore cannot be used to inject an arbitrary repository setting, HTTP method, host, or API path. The parser also enforces semantic checks that are awkward to express safely in the schema, including owner matching, allowed homepage protocols, safe `keep` entries, standalone cleanup commands, and explicit `confirm: true` for non-dry-run cleanup. Missing confirmation therefore fails in the PAT-free validation step.
 
+Wiki commands use only the explicit operation names `wiki.upsert`, `wiki.read`, and `wiki.list` plus a bounded `params` object. Wiki commands must be standalone and cannot be mixed with metadata or branch cleanup. `wiki.upsert` may use `dry_run: true` for PAT-free validation; `wiki.read` and `wiki.list` are already read-only and reject `dry_run` to avoid ambiguous execution semantics.
+
+## GitHub Wiki boundary
+
+The Wiki remote is constructed exclusively from the already validated owner/repository as:
+
+```text
+https://github.com/<owner>/<repo>.wiki.git
+```
+
+Issue input cannot provide or override a Git remote, URL, host, protocol, filesystem path, or branch. The token is passed to Git through process environment configuration for an HTTPS Authorization header, not embedded in the remote URL or command arguments. Git is executed with `spawn` and `shell: false`; Wiki content is written with Node file APIs and is never interpolated into shell commands.
+
+The first implementation supports root-level Markdown pages only. Wiki page names are normalized to a single `.md` filename and reject path separators, traversal-like `..`, hidden-dot filenames, trailing dots, control characters, and GitHub's documented problematic filename characters (`\\ / : * ? " < > |`). The final resolved page path must remain directly inside an ephemeral Wiki checkout. Content is limited to 48,000 UTF-8 bytes and Wiki audit output to 60,000 bytes.
+
+GitHub exposes a Wiki's Git repository only after an initial page has been created. If clone reports that the `.wiki.git` repository is missing, repo-remote fails with explicit instructions to create the first page in the target repository's Wiki tab and retry. For private repositories, the same class of failure can also indicate insufficient token access, which is reported as an access/setup problem rather than causing a fallback to another remote.
+
+`wiki.upsert` does not force-push. After a normal push rejection caused by concurrent movement, repo-remote performs one `pull --rebase` against the cloned Wiki branch and retries once. A real conflict fails closed. The implementation never rewrites Wiki history to win a conflict.
+
+`wiki.rename` and `wiki.delete` are not implemented in this security boundary. They remain future destructive operations and require their own explicit confirmation and review before being enabled.
+
+See [docs/wiki-operations.md](docs/wiki-operations.md) for protocol examples and operator behavior.
+
 ## Merged-branch cleanup boundary
 
 `branch_cleanup` supports only `mode: "merged"`. Branch names from the Issue are used only as a validated `keep` list and can never authorize deletion. Candidate branch names come from GitHub's current branch listing, and the deletion endpoint is constructed internally as a URL-encoded `refs/heads/<candidate>` path.
@@ -61,9 +84,9 @@ For routine future branch hygiene, prefer `delete_branch_on_merge: true` over re
 
 ## Secret handling
 
-The workflow validates the Issue body in a step that does not receive `REPO_REMOTE_TOKEN`. Dry runs also execute without the PAT, and the runtime deliberately discards an accidentally supplied PAT for every dry run. Branch-cleanup dry runs use only public GitHub reads, so a target that is not publicly readable fails rather than receiving the PAT. Only a validated, non-dry-run command reaches the mutation step where the PAT is present.
+The workflow validates the Issue body in a step that does not receive `REPO_REMOTE_TOKEN`. Dry runs also execute without the PAT, and the runtime deliberately discards an accidentally supplied PAT for every dry run. Branch-cleanup dry runs use only public GitHub reads, so a target that is not publicly readable fails rather than receiving the PAT. `wiki.upsert` dry runs are validation-only and do not clone the Wiki. `wiki.read` and `wiki.list` execute in the validated PAT-bearing step so they can read private target Wikis when permitted.
 
-Runtime errors are reported without stack traces. Token values, Bearer credentials, and Authorization header contents are redacted before log output. Metadata success comments contain validated targets and operation fields; cleanup success comments add bounded deleted/candidate/skipped branch names and fixed skip reasons, never raw API responses.
+Runtime errors are reported without stack traces. Token values, Bearer credentials, Basic credentials used by Git HTTPS auth, and Authorization header contents are redacted before log output. Metadata success comments contain validated targets and operation fields; cleanup success comments add bounded deleted/candidate/skipped branch names and fixed skip reasons; Wiki success comments contain only bounded page names/listings/content. Raw API responses, Git credential configuration, and secrets are never included in Issue comments.
 
 ## Workflow hardening
 
@@ -83,9 +106,7 @@ For higher-risk installations, configure a protected GitHub Environment with req
 
 ## Scope boundaries
 
-The current release supports repository description, homepage, topics, template-setting toggles, the `delete_branch_on_merge` automatic head-branch deletion setting, and only the fixed merged-branch cleanup described above. It does not accept arbitrary REST paths, shell commands, git remotes, repository deletion, visibility changes, transfers, arbitrary branch deletion, user-selected refs, branch protection/ruleset changes, ref updates, tags, or arbitrary Contents operations.
-
-Wiki operations are not implemented yet. When they are added, they must derive the remote exclusively from the validated owner/repository, normalize page filenames, reject traversal and remote URLs, avoid shell interpolation for page contents, and impose explicit page-size limits before any Wiki write capability is enabled.
+The current release supports repository description, homepage, topics, template-setting toggles, the `delete_branch_on_merge` automatic head-branch deletion setting, the fixed merged-branch cleanup described above, and the explicit `wiki.upsert` / `wiki.read` / `wiki.list` family. It does not accept arbitrary REST paths, shell commands, git remotes, repository deletion, visibility changes, transfers, arbitrary branch deletion, user-selected refs, branch protection/ruleset changes, ref updates, tags, arbitrary Contents operations, force pushes, Wiki rename/delete, or arbitrary Wiki filesystem paths.
 
 ## Reporting a vulnerability
 

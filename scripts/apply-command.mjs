@@ -9,6 +9,7 @@ import {
 } from './branch-cleanup.mjs';
 import { parseCommandPacket } from './command.mjs';
 import { redactSecrets } from './security.mjs';
+import { executeWikiOperation, formatWikiReport } from './wiki.mjs';
 
 const DEFAULT_API_BASE = 'https://api.github.com';
 
@@ -90,7 +91,7 @@ export async function executeCommand({
 }) {
   if (!owner) throw new Error('OWNER is not configured');
   const packet = parseCommandPacket(body, owner);
-  const { command, repo, target, changed, topics, branchCleanup, dryRun } = packet;
+  const { command, repo, target, changed, topics, branchCleanup, wikiOperation, dryRun } = packet;
 
   if (dryRun && !branchCleanup) {
     const result = {
@@ -103,6 +104,30 @@ export async function executeCommand({
   }
 
   if (!dryRun && !remoteToken) throw new Error('REPO_REMOTE_TOKEN is not configured');
+
+  if (wikiOperation) {
+    const wikiResult = await executeWikiOperation({
+      owner,
+      repo,
+      wikiOperation,
+      token: remoteToken,
+    });
+    const report = formatWikiReport({ target, result: wikiResult });
+    const summary =
+      wikiResult.operation === 'wiki.upsert'
+        ? `Updated ${target}: wiki.upsert ${JSON.stringify(wikiResult.page)}`
+        : wikiResult.operation === 'wiki.read'
+          ? `Read ${target}: wiki.read ${JSON.stringify(wikiResult.page)}`
+          : `Read ${target}: wiki.list (${wikiResult.pages.length} page(s))`;
+    const result = {
+      summary,
+      report,
+      target,
+      dryRun: false,
+    };
+    recordOutputs(output, result);
+    return result;
+  }
 
   // Ignore REMOTE_TOKEN defensively for every dry run, even if a caller accidentally provides one.
   const github = createGitHubClient({ token: dryRun ? '' : remoteToken, fetchImpl, apiBase });

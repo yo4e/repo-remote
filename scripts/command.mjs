@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { assertWikiCommitMessage, assertWikiContent, normalizeWikiPage } from './wiki.mjs';
 
 const SCHEMA_URL = new URL('../schemas/command-v1.schema.json', import.meta.url);
 const COMMAND_SCHEMA = JSON.parse(fs.readFileSync(SCHEMA_URL, 'utf8'));
@@ -152,6 +153,53 @@ function assertSafeKeepBranch(value) {
   }
 }
 
+function parseWikiOperation(command) {
+  const operation = command.operation;
+  const params = command.params;
+  const keys = Object.keys(params);
+
+  if (operation === 'wiki.list') {
+    if (keys.length !== 0) throw new Error('wiki.list params must be an empty object');
+    return { operation };
+  }
+
+  if (operation === 'wiki.read') {
+    if (!Object.prototype.hasOwnProperty.call(params, 'page')) {
+      throw new Error('wiki.read requires params.page');
+    }
+    if (keys.some((key) => key !== 'page')) {
+      throw new Error('wiki.read accepts only params.page');
+    }
+    const normalized = normalizeWikiPage(params.page);
+    return {
+      operation,
+      page: normalized.page,
+      filename: normalized.filename,
+    };
+  }
+
+  if (operation === 'wiki.upsert') {
+    if (!Object.prototype.hasOwnProperty.call(params, 'page')) {
+      throw new Error('wiki.upsert requires params.page');
+    }
+    if (!Object.prototype.hasOwnProperty.call(params, 'content')) {
+      throw new Error('wiki.upsert requires params.content');
+    }
+    const normalized = normalizeWikiPage(params.page);
+    assertWikiContent(params.content);
+    assertWikiCommitMessage(params.message);
+    return {
+      operation,
+      page: normalized.page,
+      filename: normalized.filename,
+      content: params.content,
+      message: params.message,
+    };
+  }
+
+  throw new Error(`unsupported wiki operation: ${operation}`);
+}
+
 export function parseCommandPacket(body, owner) {
   let command;
   try {
@@ -193,16 +241,36 @@ export function parseCommandPacket(body, owner) {
   const hasIsTemplate = Object.prototype.hasOwnProperty.call(command, 'is_template');
   const hasDeleteBranchOnMerge = Object.prototype.hasOwnProperty.call(command, 'delete_branch_on_merge');
   const hasBranchCleanup = Object.prototype.hasOwnProperty.call(command, 'branch_cleanup');
+  const hasOperation = Object.prototype.hasOwnProperty.call(command, 'operation');
+  const hasParams = Object.prototype.hasOwnProperty.call(command, 'params');
   const topics = hasTopics ? [...new Set(command.topics.map(normalizeTopic))] : undefined;
   const dryRun = command.dry_run === true;
+
+  if (hasOperation && !hasParams) {
+    throw new Error('operation requires params');
+  }
+  if (hasParams && !hasOperation) {
+    throw new Error('params may only be used with an explicit operation');
+  }
+
+  const wikiOperation = hasOperation ? parseWikiOperation(command) : undefined;
 
   if (hasBranchCleanup) {
     for (const branch of command.branch_cleanup.keep || []) assertSafeKeepBranch(branch);
     if (!dryRun && command.branch_cleanup.confirm !== true) {
       throw new Error('branch_cleanup.confirm must be true for a non-dry-run cleanup');
     }
-    if (hasDescription || hasHomepage || hasTopics || hasIsTemplate || hasDeleteBranchOnMerge) {
+    if (hasDescription || hasHomepage || hasTopics || hasIsTemplate || hasDeleteBranchOnMerge || wikiOperation) {
       throw new Error('branch_cleanup must be submitted as a standalone command');
+    }
+  }
+
+  if (wikiOperation) {
+    if (hasDescription || hasHomepage || hasTopics || hasIsTemplate || hasDeleteBranchOnMerge || hasBranchCleanup) {
+      throw new Error(`${wikiOperation.operation} must be submitted as a standalone command`);
+    }
+    if (dryRun && wikiOperation.operation !== 'wiki.upsert') {
+      throw new Error('dry_run is only supported for wiki.upsert within the Wiki operation family');
     }
   }
 
@@ -213,6 +281,7 @@ export function parseCommandPacket(body, owner) {
     hasIsTemplate && 'is_template',
     hasDeleteBranchOnMerge && 'delete_branch_on_merge',
     hasBranchCleanup && 'branch_cleanup',
+    wikiOperation && wikiOperation.operation,
   ].filter(Boolean);
 
   return {
@@ -227,6 +296,7 @@ export function parseCommandPacket(body, owner) {
           keep: [...(command.branch_cleanup.keep || [])],
         }
       : undefined,
+    wikiOperation,
     dryRun,
   };
 }
