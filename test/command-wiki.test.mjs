@@ -45,6 +45,15 @@ test('rejects traversal, mixed commands, and malformed wiki params', () => {
   }), OWNER), /standalone/);
 });
 
+test('mixed legacy command cannot smuggle operation without params', () => {
+  assert.throws(() => parseCommandPacket(JSON.stringify({
+    version: 1,
+    repository: 'templex-soul',
+    operation: 'wiki.read',
+    description: 'legacy field makes schema anyOf match',
+  }), OWNER), /operation requires params/);
+});
+
 test('read/list do not accept dry_run', () => {
   assert.throws(() => parseCommandPacket(JSON.stringify({
     version: 1,
