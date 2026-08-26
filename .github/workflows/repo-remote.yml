@@ -2,7 +2,7 @@ name: Repo Remote
 
 on:
   issues:
-    types: [opened, edited, labeled]
+    types: [edited, labeled]
 
 permissions:
   contents: read
