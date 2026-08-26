@@ -20,7 +20,7 @@ Only these operations are supported:
 
 For day-to-day branch hygiene, prefer `delete_branch_on_merge: true`: configure it once and let GitHub remove future merged PR head branches automatically. `branch_cleanup` is intended as an occasional cleanup tool for repositories that already accumulated stale merged branches.
 
-The destructive cleanup operation is intentionally narrower than general branch deletion. It does **not** accept an explicit branch to delete, a ref, a wildcard, a prefix, an age, or an API path. Wiki operations likewise do **not** accept a Git remote, URL, filesystem path, branch, force push, rename, or delete request. Repository deletion, visibility changes, transfers, archiving, renaming, arbitrary GitHub API calls, arbitrary Contents operations, tags, ref updates, and arbitrary shell commands remain unsupported.
+The destructive cleanup operation is intentionally narrower than general branch deletion. It does **not** accept an explicit branch to delete, a ref, a wildcard, a prefix, an age, or an API path. Wiki operations likewise do **not** accept a Git remote, URL, filesystem path, branch, force push, rename, or delete request. Repository deletion, visibility changes, transfers, archiving, renaming, arbitrary GitHub API calls, arbitrary Contents operations, tags, ref updates, and arbitrary shell commands remain unsupported. **No arbitrary Contents operations are exposed.**
 
 ## Command format
 
