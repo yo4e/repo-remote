@@ -7,6 +7,7 @@ export function redactSecrets(value, secrets = []) {
 
   safe = safe
     .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]')
+    .replace(/\bBasic\s+[A-Za-z0-9+/=]+/gi, 'Basic [REDACTED]')
     .replace(/\bAuthorization\s*:\s*[^\r\n]+/gi, 'Authorization: [REDACTED]');
 
   return safe.slice(0, 2000);
