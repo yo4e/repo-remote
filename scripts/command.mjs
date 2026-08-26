@@ -246,6 +246,9 @@ export function parseCommandPacket(body, owner) {
   const topics = hasTopics ? [...new Set(command.topics.map(normalizeTopic))] : undefined;
   const dryRun = command.dry_run === true;
 
+  if (hasOperation && !hasParams) {
+    throw new Error('operation requires params');
+  }
   if (hasParams && !hasOperation) {
     throw new Error('params may only be used with an explicit operation');
   }
