@@ -36,6 +36,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Capture bounded audit evidence
+        id: evidence
+        env:
+          OWNER: ${{ github.repository_owner }}
+          COMMAND_BODY: ${{ github.event.issue.body }}
+        run: node scripts/audit.mjs
+
       - name: Validate command before exposing the PAT
         id: validate
         env:
@@ -67,12 +74,28 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           SUMMARY: ${{ steps.apply.outputs.summary || steps.dry_run.outputs.summary }}
           REPORT: ${{ steps.apply.outputs.report || steps.dry_run.outputs.report }}
+          TARGET: ${{ steps.validate.outputs.target }}
+          OPERATION: ${{ steps.validate.outputs.operation }}
+          CHANGED: ${{ steps.validate.outputs.changed }}
+          DRY_RUN: ${{ steps.validate.outputs.dry_run }}
+          FINGERPRINT: ${{ steps.evidence.outputs.fingerprint }}
+          BODY_BYTES: ${{ steps.evidence.outputs.body_bytes }}
         run: |
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          BODY="${REPORT:-$SUMMARY}"
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "✅ $BODY
-
-          Actions run: $RUN_URL"
+          RESULT="${REPORT:-$SUMMARY}"
+          COMMENT_FILE="${RUNNER_TEMP}/repo-remote-success.md"
+          {
+            printf '%s\n\n' '✅ repo-remote command succeeded'
+            printf -- '- Target: `%s`\n' "$TARGET"
+            printf -- '- Operation: `%s`\n' "$OPERATION"
+            printf -- '- Dry run: `%s`\n' "$DRY_RUN"
+            printf -- '- Changed resources: `%s`\n' "$CHANGED"
+            printf -- '- Payload fingerprint: `%s`\n' "$FINGERPRINT"
+            printf -- '- Payload bytes: `%s`\n' "$BODY_BYTES"
+            printf -- '- Actions run: %s\n' "$RUN_URL"
+            printf '\n### Result\n%s\n' "$RESULT"
+          } > "$COMMENT_FILE"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$COMMENT_FILE"
           gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --reason completed
 
       - name: Report failure
@@ -80,6 +103,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          TARGET_HINT: ${{ steps.evidence.outputs.target_hint }}
+          OPERATION_HINT: ${{ steps.evidence.outputs.operation_hint }}
+          CHANGED_HINT: ${{ steps.evidence.outputs.changed_hint }}
+          DRY_RUN_HINT: ${{ steps.evidence.outputs.dry_run_hint }}
+          FINGERPRINT: ${{ steps.evidence.outputs.fingerprint }}
+          BODY_BYTES: ${{ steps.evidence.outputs.body_bytes }}
         run: |
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "❌ Command failed. See the Actions run: $RUN_URL"
+          COMMENT_FILE="${RUNNER_TEMP}/repo-remote-failure.md"
+          {
+            printf '%s\n\n' '❌ repo-remote command failed'
+            printf -- '- Target hint (unvalidated): `%s`\n' "${TARGET_HINT:-unavailable}"
+            printf -- '- Operation hint (unvalidated): `%s`\n' "${OPERATION_HINT:-unavailable}"
+            printf -- '- Dry run hint (unvalidated): `%s`\n' "${DRY_RUN_HINT:-unknown}"
+            printf -- '- Changed-resource hint (unvalidated): `%s`\n' "${CHANGED_HINT:-unavailable}"
+            printf -- '- Payload fingerprint: `%s`\n' "${FINGERPRINT:-unavailable}"
+            printf -- '- Payload bytes: `%s`\n' "${BODY_BYTES:-unknown}"
+            printf -- '- Actions run: %s\n\n' "$RUN_URL"
+            printf '%s\n' 'Validation or execution details are kept in the Actions log; the Issue comment does not echo the full command payload or credentials.'
+          } > "$COMMENT_FILE"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$COMMENT_FILE"
