@@ -1,32 +1,51 @@
 # repo-remote
 
-A tiny control repository for safely updating allowlisted GitHub repository settings, managing narrowly scoped GitHub Wiki pages, and pruning proven-merged branches through Issues and GitHub Actions.
+A tiny, auditable GitHub control bridge for AI agents and automation. An authorized, explicitly labeled Issue becomes a narrowly scoped command, and GitHub Actions applies only the operations that `repo-remote` explicitly allows.
 
-`repo-remote` is a bridge: an authorized, explicitly labeled Issue becomes a narrowly scoped command, and GitHub Actions applies that command to another repository owned by the control-repository owner.
+## Project status
+
+The **current core is feature-complete for its intended use** and is now in maintenance mode: use it, fix bugs when they appear, and add operations only when a real need justifies widening the policy boundary.
+
+Stable core:
+
+- update repository **description**, **homepage**, and **topics**;
+- toggle **Template repository** (`is_template`);
+- toggle GitHub's **Automatically delete head branches** setting (`delete_branch_on_merge`);
+- safely prune already-merged same-repository branches with `branch_cleanup.mode: "merged"`;
+- validate commands with a versioned schema, bounded input, owner/actor authorization, dry-run support, structured audit evidence, and PAT-free validation where applicable.
+
+Implemented but **not part of the recommended baseline deployment**:
+
+- `wiki.list`, `wiki.read`, and `wiki.upsert` exist behind the same narrow policy boundary, but live Wiki rollout is deferred because Git-backed Wiki access adds setup and token-scope friction for comparatively low value in current use. The implementation is retained for future use; see [docs/wiki-operations.md](docs/wiki-operations.md).
+
+Future ideas such as GitHub App authentication and archive/unarchive are tracked in [Issue #4](https://github.com/yo4e/repo-remote/issues/4). They are not current work items.
 
 ## What it can change
 
-Only these operations are supported:
+### Stable operations
 
 - `description` — GitHub About description
 - `homepage` — GitHub About website URL
-- `topics` — GitHub repository topics
+- `topics` — repository topics
 - `is_template` — enable or disable GitHub's Template repository setting
-- `delete_branch_on_merge` — enable or disable GitHub's **Automatically delete head branches** setting
+- `delete_branch_on_merge` — enable or disable GitHub's automatic merged-head-branch deletion
 - `branch_cleanup.mode: "merged"` — prune current branch heads that GitHub records as same-repository PRs merged into the current default branch
-- `wiki.upsert` — create or replace one root-level Markdown Wiki page
-- `wiki.read` — read one root-level Markdown Wiki page into the Issue result
-- `wiki.list` — list root-level Markdown Wiki pages
 
-For day-to-day branch hygiene, prefer `delete_branch_on_merge: true`: configure it once and let GitHub remove future merged PR head branches automatically. `branch_cleanup` is intended as an occasional cleanup tool for repositories that already accumulated stale merged branches.
+The destructive cleanup operation is intentionally narrower than general branch deletion. It does **not** accept an explicit branch to delete, a ref, wildcard, prefix, age rule, or arbitrary API path.
 
-The destructive cleanup operation is intentionally narrower than general branch deletion. It does **not** accept an explicit branch to delete, a ref, a wildcard, a prefix, an age, or an API path. Wiki operations likewise do **not** accept a Git remote, URL, filesystem path, branch, force push, rename, or delete request. Repository deletion, visibility changes, transfers, archiving, renaming, arbitrary GitHub API calls, arbitrary Contents operations, tags, ref updates, and arbitrary shell commands remain unsupported. **No arbitrary Contents operations are exposed.**
+Repository deletion, visibility changes, transfers, archiving, renaming, arbitrary GitHub API calls, arbitrary Contents operations, tags, ref updates, branch-protection changes, and arbitrary shell commands remain unsupported.
+
+### Deferred / optional Wiki operations
+
+The codebase also contains `wiki.upsert`, `wiki.read`, and `wiki.list`. Wiki input is a page title, never a path; the remote is derived internally as `https://github.com/<owner>/<repo>.wiki.git`; rename/delete, force-push, arbitrary remotes, and arbitrary filesystem paths are not supported.
+
+These operations are retained as an experimental/deferred capability rather than advertised as part of the stable core. See [docs/wiki-operations.md](docs/wiki-operations.md) for the implementation boundary and setup caveats.
 
 ## Command format
 
 Create an Issue with the label **`repo-remote:command`** whose body is JSON.
 
-Repository-setting commands keep the compact v1 form:
+Example metadata update:
 
 ```json
 {
@@ -37,14 +56,12 @@ Repository-setting commands keep the compact v1 form:
   "topics": [
     "creative-coding",
     "semantic-network",
-    "javascript",
-    "digital-toy",
-    "github-pages"
+    "javascript"
   ]
 }
 ```
 
-To enable a repository as a GitHub template:
+Enable a repository as a template:
 
 ```json
 {
@@ -54,9 +71,7 @@ To enable a repository as a GitHub template:
 }
 ```
 
-Set `is_template` to `false` to turn the setting off again.
-
-To make GitHub automatically delete a pull request's head branch after merge:
+Enable automatic deletion of future merged PR head branches:
 
 ```json
 {
@@ -66,9 +81,7 @@ To make GitHub automatically delete a pull request's head branch after merge:
 }
 ```
 
-Set `delete_branch_on_merge` to `false` to disable automatic head-branch deletion again. This is a repository setting handled through the same allowlisted repository PATCH path as other Administration-backed settings; it does not directly delete a Git ref and does not require Contents write by itself.
-
-To inspect safely removable merged branches without exposing the cross-repository PAT:
+Inspect safely removable merged branches without exposing the cross-repository PAT:
 
 ```json
 {
@@ -82,7 +95,7 @@ To inspect safely removable merged branches without exposing the cross-repositor
 }
 ```
 
-To apply that cleanup, submit it as a standalone command and confirm it explicitly:
+Apply the cleanup as a standalone command with explicit confirmation:
 
 ```json
 {
@@ -96,138 +109,82 @@ To apply that cleanup, submit it as a standalone command and confirm it explicit
 }
 ```
 
-For each current branch, cleanup skips the current default, every validated `keep` entry, protected branches, and branches with open same-repository PRs. A deletion candidate must have a GitHub PR record whose head repository and branch exactly match the target, whose base is the current default branch, whose `merged_at` is set, and whose recorded head SHA still equals the current branch SHA. The current default, open-PR state, branch head, and PR evidence are checked again immediately before the derived `refs/heads/<branch>` deletion. Git ancestry alone is never treated as merge evidence.
+For each current branch, cleanup skips the current default, every validated `keep` entry, protected branches, and branches with open same-repository PRs. A candidate must have a GitHub PR record whose head repository and branch exactly match the target, whose base is the current default branch, whose `merged_at` is set, and whose recorded head SHA still equals the current branch SHA. The destructive boundary is checked again immediately before deletion. Git ancestry alone is never treated as merge evidence.
 
-Dry-run cleanup reports candidates and skip reasons using GitHub's public read endpoints and deliberately ignores `REPO_REMOTE_TOKEN`, even if it is accidentally present. Consequently, dry-run cleanup is available only for repositories readable without that PAT. Applied cleanup reports deleted and skipped branch names in the success Issue comment.
+Dry-run cleanup uses GitHub's public read endpoints and deliberately ignores `REPO_REMOTE_TOKEN`, so it works only for repositories readable without that PAT.
 
-### Wiki operations
+`repository` may also be written as `OWNER/repository`; any owner other than the control repository owner is rejected.
 
-Wiki operations use an explicit operation family. To create or replace one Markdown page:
-
-```json
-{
-  "version": 1,
-  "repository": "templex-soul",
-  "operation": "wiki.upsert",
-  "params": {
-    "page": "Architecture",
-    "content": "# Architecture\n\n...",
-    "message": "Update Architecture wiki"
-  }
-}
-```
-
-`message` is optional. Add `"dry_run": true` to validate a `wiki.upsert` command, including its page name and content bounds, without exposing the PAT or cloning the Wiki.
-
-To read one page:
-
-```json
-{
-  "version": 1,
-  "repository": "templex-soul",
-  "operation": "wiki.read",
-  "params": {
-    "page": "Architecture"
-  }
-}
-```
-
-To list pages:
-
-```json
-{
-  "version": 1,
-  "repository": "templex-soul",
-  "operation": "wiki.list",
-  "params": {}
-}
-```
-
-Wiki input is a page title, never a path. The remote is always derived internally as `https://github.com/<owner>/<repo>.wiki.git`. Page names are normalized to one root-level `.md` file and traversal/path separators are rejected. Contents are written through file APIs rather than shell interpolation, and Git runs without a shell. `wiki.rename` and `wiki.delete` are not supported.
-
-A GitHub Wiki must already have its initial page before the backing `.wiki.git` repository can be cloned. If a target Wiki has never been initialized, create and save one page from the target repository's **Wiki** tab, then retry. See [docs/wiki-operations.md](docs/wiki-operations.md) for details.
-
-`repository` may also be written as `OWNER/Word-Terrarium`. Any owner other than the control repository owner is rejected.
-
-`version` is required and must currently be `1`. Unknown keys are rejected. A command must contain either at least one supported compact repository-setting field, the standalone `branch_cleanup` object, or an explicit supported Wiki `operation` plus `params`. Wiki and branch-cleanup operations cannot be mixed with repository-setting changes.
-
-The complete Issue body is limited to **131,072 UTF-8 bytes**. After JSON parsing, command structure is limited to **16 levels of depth** and **512 JSON value nodes** before schema validation continues. These bounds complement the field-specific schema limits and the 48,000-byte Wiki content limit so malformed or intentionally complex Issue payloads fail closed before the PAT-bearing step.
-
-To validate a repository-setting command without changing anything:
-
-```json
-{
-  "version": 1,
-  "repository": "Word-Terrarium",
-  "topics": ["creative-coding", "digital-toy"],
-  "dry_run": true
-}
-```
-
-Dry runs never receive or use the cross-repository PAT.
+`version` is required and must currently be `1`. Unknown keys are rejected. The complete Issue body is limited to **131,072 UTF-8 bytes**, parsed JSON to **16 levels of depth**, and **512 JSON value nodes** before schema validation continues.
 
 ## One-time setup
 
-The standard Actions `GITHUB_TOKEN` is scoped to this repository and cannot administer sibling repositories. `repo-remote` therefore currently needs one fine-grained personal access token stored as an Actions secret.
+The standard Actions `GITHUB_TOKEN` is scoped to the control repository and cannot administer sibling repositories. `repo-remote` therefore currently uses a fine-grained personal access token stored as an Actions secret.
 
-1. In GitHub, create a **fine-grained personal access token**.
-2. Set the resource owner to the account that owns the repositories to control.
-3. Prefer **Selected repositories** and grant access only to repositories that `repo-remote` needs to manage. Use broader access only when it is genuinely required.
-4. Grant only the repository permissions needed by the enabled operations:
+1. Create a **fine-grained personal access token** in GitHub.
+2. Set the resource owner to the account that owns the target repositories.
+3. Prefer **Selected repositories** and grant access only to repositories that `repo-remote` must control.
+4. Grant only the permissions required by the operations you actually use:
    - **Administration — Read and write** for description, homepage, topics, `is_template`, and `delete_branch_on_merge`.
-   - **Contents — Read-only** for `wiki.read` / `wiki.list` when no Wiki write capability is needed.
-   - **Contents — Read and write** for `wiki.upsert` and `branch_cleanup`.
-   - **Pull requests — Read-only** only when using `branch_cleanup`, for checking merged and open PR state.
-5. In this repository, open **Settings → Secrets and variables → Actions → New repository secret**.
-6. Name the secret `REPO_REMOTE_TOKEN` and paste the token.
-7. Create the Issue label `repo-remote:command`.
-8. Optional: create an Actions repository variable named `ALLOWED_ACTORS` containing a JSON array of additional GitHub logins, such as `["alice","octocat"]`. Leave it unset or set it to `[]` for owner-only operation.
+   - **Contents — Read and write** plus **Pull requests — Read-only** only when using `branch_cleanup`.
+   - Optional/deferred Wiki use has additional Contents requirements documented in [docs/wiki-operations.md](docs/wiki-operations.md).
+5. Store the token in this repository as the Actions secret `REPO_REMOTE_TOKEN`.
+6. Create the Issue label `repo-remote:command`.
+7. Optional: create an Actions repository variable `ALLOWED_ACTORS` containing a JSON array of additional GitHub logins. Leave it unset or use `[]` for owner-only operation.
 
-GitHub groups repository metadata updates, template-repository toggling, and automatic merged-head-branch deletion under Administration permission. Its [Delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference) endpoint requires Contents write, while [List pull requests](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests) requires Pull requests read. Wiki operations use the separate Git-backed Wiki repository and require Contents access appropriate to read/write behavior. Contents write is a material increase in credential blast radius even though repo-remote exposes neither arbitrary Contents operations nor arbitrary Wiki Git operations. Keep the token on **Selected repositories**; the checked-in schema, parser, fixed remote construction, filename guards, and workflow remain the narrower policy boundary.
+Keep the token on **Selected repositories**, prefer a short practical expiry, rotate it periodically, and revoke it immediately after suspected exposure. Do not widen it to **All repositories** merely to avoid maintaining repository selection.
 
-See [SECURITY.md](SECURITY.md) for token rotation, actor authorization, workflow hardening, repository-policy controls, Wiki safety, and the optional protected-environment setup.
+A future GitHub App authentication mode may reduce long-lived PAT blast radius, but its additional setup and implementation complexity are not justified for the current scale. It remains a future option rather than unfinished core work.
+
+See [SECURITY.md](SECURITY.md) for the complete security boundary and operational guidance.
 
 ## Security model
 
-This repository may be public, but commands are deliberately constrained:
+This repository may be public, but privileged execution remains deliberately constrained:
 
-- only Issues carrying the explicit `repo-remote:command` label are considered;
+- only Issues carrying `repo-remote:command` are considered;
 - the repository owner is authorized by default; additional actors require explicit `ALLOWED_ACTORS` configuration;
-- both the Issue author and the account that triggered the current event must be authorized; closed Issues and manual re-runs cannot execute;
+- both the Issue author and the account triggering the current event must be authorized;
+- closed Issues and manual re-runs cannot execute old commands;
 - target owner is hard-locked to the control repository owner;
-- Issue bodies, JSON depth, and JSON node counts are bounded before schema validation proceeds;
-- every command must match the checked-in versioned JSON Schema;
-- unknown command keys are rejected;
-- only the explicit repository settings, fixed `branch_cleanup: merged`, and `wiki.upsert` / `wiki.read` / `wiki.list` operations are implemented;
-- repository PATCH payloads are constructed only from individually allowlisted fields; arbitrary settings objects are never accepted;
-- Wiki remote identity is derived exclusively from the validated owner/repository; Issue input cannot provide a URL, remote, branch, or filesystem path;
-- Wiki page names reject traversal/path separators and GitHub-problematic filename characters; Wiki content and result size are bounded;
-- Git commands use argument arrays with `shell: false`, while Wiki content is written through Node file APIs rather than interpolated into commands;
-- malformed commands are rejected before the cross-repository PAT is exposed to a step;
-- non-dry-run cleanup is rejected before PAT exposure unless `confirm: true` is present;
-- cleanup candidates require exact same-repository merged-PR evidence into the current default at the current branch head, and the destructive boundary is rechecked before deletion;
-- default, protected, kept, open-PR, fork-head, unmerged, non-default-base, and advanced/reused branch cases are not deleted;
-- dry runs execute without the PAT, and the runtime ignores any accidentally supplied PAT for them;
-- token values, Bearer credentials, Basic Git credentials, and Authorization headers are redacted from runtime error logs;
-- Issue text is passed to the parser as data, not executed as shell code;
-- every run records bounded audit evidence: validated success metadata or unvalidated safe hints, command byte count, a SHA-256 payload fingerprint, and the Actions run URL; the full payload is not repeated in the result comment;
-- successful commands are commented on and closed; failures remain open with structured evidence and a link to the Actions run.
+- request size and JSON complexity are bounded before privileged execution;
+- every command must match the checked-in versioned schema and unknown keys are rejected;
+- repository PATCH payloads are built only from individually allowlisted fields;
+- cleanup requires exact merged-PR evidence and explicit confirmation for real deletion;
+- dry runs do not receive the cross-repository PAT;
+- malformed commands are rejected before the PAT-bearing step;
+- token values and Authorization material are redacted from runtime errors;
+- Issue text is parsed as data, never executed as shell code;
+- every run records bounded audit evidence, a payload fingerprint, and an Actions run link without repeating the full command body.
+
+Security-sensitive policy lives in the workflow, schema, parser/runtime, tests, and [SECURITY.md](SECURITY.md). CODEOWNERS, full-SHA Action pins, weekly Dependabot checks, CI, and CodeQL provide additional review and supply-chain controls.
 
 ## Operations and maintenance
 
-Each installed/template copy runs workflows in **that repository owner's own GitHub Actions account**. It does not consume a central `yo4e/repo-remote` runner pool, and copied repositories do not inherit `REPO_REMOTE_TOKEN`. GitHub Actions billing and included usage can change by plan and policy, so operators should check the current GitHub documentation rather than treating a historical free/minute allowance as part of repo-remote's contract.
+Each copy of repo-remote runs in **that repository owner's own GitHub Actions account**. A template/copy does not inherit the original repository's `REPO_REMOTE_TOKEN`.
 
-Issue events can still create workflow runs even when the privileged job is skipped by authorization or label gates. The explicit command label, actor checks, five-minute timeout, and per-Issue concurrency limit reduce accidental or abusive work, but they do not make a public Issue tracker free of event-spam risk. For a control repository that attracts unwanted traffic, use GitHub's repository moderation/settings in addition to repo-remote's execution gates.
+Issue events can still create workflow evaluations even when authorization prevents privileged execution, so repository moderation remains relevant if public Issue spam becomes material.
 
-For the PAT, prefer a short practical expiry, rotate it periodically, and revoke it immediately after suspected exposure. Replace the `REPO_REMOTE_TOKEN` secret after rotation; never temporarily widen the token to **All repositories** merely to avoid maintaining Selected-repository scope. For installations where every mutation should receive human approval, move the secret into a protected Environment with required reviewers.
+For day-to-day branch hygiene, prefer `delete_branch_on_merge: true`; `branch_cleanup` is an occasional tool for repositories that already accumulated stale merged branches.
 
-The repository also checks in CODEOWNERS coverage for the workflow/parser/schema/security boundaries, weekly Dependabot checks for GitHub Actions, full-SHA Action pins, and CodeQL analysis. Recommended `main` branch protection is documented in [SECURITY.md](SECURITY.md); repository-host settings remain separate from the checked-in policy and must be configured by the repository owner.
+The current maintenance posture is intentionally conservative: do not add a new operation merely because GitHub exposes an API for it. Add one when there is a recurring need, then give it its own validation, authorization, audit behavior, tests, and security review.
 
 ## Why Issues?
 
-ChatGPT's connected GitHub tooling and many other agents can create Issues even when a particular GitHub REST write endpoint is not exposed directly. This repository turns that common capability into a small, auditable command queue.
+ChatGPT's connected GitHub tooling and many other agents can create Issues even when a particular GitHub REST write endpoint is not exposed directly. `repo-remote` turns that common capability into a small, auditable command queue.
 
-The Issue history is also a useful operation log: every requested operation remains visible and attributable.
+The Issue history also serves as an attributable operation log.
+
+## Development
+
+Requires Node.js 20+.
+
+```bash
+npm run check
+npm test
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution and release notes.
 
 ## Files
 
@@ -243,12 +200,12 @@ scripts/limits.mjs                 # Issue-body / JSON complexity guards
 scripts/audit.mjs                  # bounded request fingerprint + audit hints
 scripts/validate-command-cli.mjs   # validation step without PAT
 scripts/apply-command.mjs          # command dispatcher + GitHub REST mutations
-scripts/wiki.mjs                   # bounded Git-backed Wiki read/list/upsert runtime
-scripts/branch-cleanup.mjs         # pure merged-branch planner + destructive rechecks
+scripts/branch-cleanup.mjs         # merged-branch planner + destructive rechecks
+scripts/wiki.mjs                   # retained/deferred Wiki implementation
 scripts/security.mjs               # log redaction
-docs/wiki-operations.md            # Wiki protocol, setup, and safety details
+docs/wiki-operations.md            # deferred Wiki protocol/safety details
 SECURITY.md                        # token/actor/workflow security guidance
-README.md                          # protocol and setup
+CHANGELOG.md                       # notable changes and deferred items
 ```
 
 ## Author / design
