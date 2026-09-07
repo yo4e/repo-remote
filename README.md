@@ -33,7 +33,7 @@ Future ideas such as GitHub App authentication and archive/unarchive are tracked
 
 The destructive cleanup operation is intentionally narrower than general branch deletion. It does **not** accept an explicit branch to delete, a ref, wildcard, prefix, age rule, or arbitrary API path.
 
-Repository deletion, visibility changes, transfers, archiving, renaming, arbitrary GitHub API calls, arbitrary Contents operations, tags, ref updates, branch-protection changes, and arbitrary shell commands remain unsupported.
+Repository deletion, visibility changes, transfers, archiving, renaming, arbitrary GitHub API calls, arbitrary Contents operations, tags, ref updates, branch-protection changes, and arbitrary shell commands remain unsupported. **No arbitrary Contents operations are exposed.**
 
 ### Deferred / optional Wiki operations
 
