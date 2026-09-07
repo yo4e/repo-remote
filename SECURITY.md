@@ -12,7 +12,7 @@ Prefer a fine-grained personal access token with access to only the repositories
 - **Contents: Read and write** plus **Pull requests: Read-only** only when using `branch_cleanup`;
 - optional/deferred Wiki use requires the Contents permissions described in [docs/wiki-operations.md](docs/wiki-operations.md).
 
-`delete_branch_on_merge` uses GitHub's allowlisted Update-a-repository endpoint and does not directly delete a ref, so that setting does not require Contents write by itself.
+`delete_branch_on_merge` uses GitHub's allowlisted Update-a-repository endpoint and does not directly delete a ref, so that setting does not require Contents write by itself. **No arbitrary Contents operations are exposed**; Contents permission is used only by the explicit branch-cleanup and deferred Wiki paths described here.
 
 Store the token as the Actions secret `REPO_REMOTE_TOKEN`. Do not place it in Issues, repository variables, workflow inputs, comments, artifacts, or source files. Prefer a short practical expiry, rotate it periodically, and revoke it immediately if exposure is suspected. Keep **Selected repositories** rather than widening the token to **All repositories** merely to reduce maintenance friction.
 
