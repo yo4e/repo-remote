@@ -15,9 +15,10 @@ try {
   if (!OWNER) throw new Error('OWNER is not configured');
   const packet = parseCommandPacket(BODY, OWNER);
   setOutput('target', packet.target);
+  setOutput('operation', packet.operation);
   setOutput('changed', packet.changed.join(','));
   setOutput('dry_run', String(packet.dryRun));
-  console.log(`Validated ${packet.target}: ${packet.changed.join(', ')}`);
+  console.log(`Validated ${packet.target}: ${packet.operation} (${packet.changed.join(', ')})`);
 } catch (error) {
   console.error(`repo-remote: ${error instanceof Error ? error.message : 'command validation failed'}`);
   process.exit(1);
