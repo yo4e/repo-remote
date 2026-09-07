@@ -1,0 +1,7 @@
+# Security-sensitive policy boundaries.
+/.github/workflows/ @yo4e
+/.github/CODEOWNERS @yo4e
+/.github/dependabot.yml @yo4e
+/scripts/ @yo4e
+/schemas/ @yo4e
+/SECURITY.md @yo4e
