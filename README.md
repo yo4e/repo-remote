@@ -151,6 +151,8 @@ A GitHub Wiki must already have its initial page before the backing `.wiki.git` 
 
 `version` is required and must currently be `1`. Unknown keys are rejected. A command must contain either at least one supported compact repository-setting field, the standalone `branch_cleanup` object, or an explicit supported Wiki `operation` plus `params`. Wiki and branch-cleanup operations cannot be mixed with repository-setting changes.
 
+The complete Issue body is limited to **131,072 UTF-8 bytes**. After JSON parsing, command structure is limited to **16 levels of depth** and **512 JSON value nodes** before schema validation continues. These bounds complement the field-specific schema limits and the 48,000-byte Wiki content limit so malformed or intentionally complex Issue payloads fail closed before the PAT-bearing step.
+
 To validate a repository-setting command without changing anything:
 
 ```json
@@ -183,7 +185,7 @@ The standard Actions `GITHUB_TOKEN` is scoped to this repository and cannot admi
 
 GitHub groups repository metadata updates, template-repository toggling, and automatic merged-head-branch deletion under Administration permission. Its [Delete a reference](https://docs.github.com/en/rest/git/refs#delete-a-reference) endpoint requires Contents write, while [List pull requests](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests) requires Pull requests read. Wiki operations use the separate Git-backed Wiki repository and require Contents access appropriate to read/write behavior. Contents write is a material increase in credential blast radius even though repo-remote exposes neither arbitrary Contents operations nor arbitrary Wiki Git operations. Keep the token on **Selected repositories**; the checked-in schema, parser, fixed remote construction, filename guards, and workflow remain the narrower policy boundary.
 
-See [SECURITY.md](SECURITY.md) for token rotation, actor authorization, workflow hardening, Wiki safety, and the optional protected-environment setup.
+See [SECURITY.md](SECURITY.md) for token rotation, actor authorization, workflow hardening, repository-policy controls, Wiki safety, and the optional protected-environment setup.
 
 ## Security model
 
@@ -193,6 +195,7 @@ This repository may be public, but commands are deliberately constrained:
 - the repository owner is authorized by default; additional actors require explicit `ALLOWED_ACTORS` configuration;
 - both the Issue author and the account that triggered the current event must be authorized; closed Issues and manual re-runs cannot execute;
 - target owner is hard-locked to the control repository owner;
+- Issue bodies, JSON depth, and JSON node counts are bounded before schema validation proceeds;
 - every command must match the checked-in versioned JSON Schema;
 - unknown command keys are rejected;
 - only the explicit repository settings, fixed `branch_cleanup: merged`, and `wiki.upsert` / `wiki.read` / `wiki.list` operations are implemented;
@@ -207,7 +210,18 @@ This repository may be public, but commands are deliberately constrained:
 - dry runs execute without the PAT, and the runtime ignores any accidentally supplied PAT for them;
 - token values, Bearer credentials, Basic Git credentials, and Authorization headers are redacted from runtime error logs;
 - Issue text is passed to the parser as data, not executed as shell code;
-- successful commands are commented on and closed; failures remain open with a link to the Actions run.
+- every run records bounded audit evidence: validated success metadata or unvalidated safe hints, command byte count, a SHA-256 payload fingerprint, and the Actions run URL; the full payload is not repeated in the result comment;
+- successful commands are commented on and closed; failures remain open with structured evidence and a link to the Actions run.
+
+## Operations and maintenance
+
+Each installed/template copy runs workflows in **that repository owner's own GitHub Actions account**. It does not consume a central `yo4e/repo-remote` runner pool, and copied repositories do not inherit `REPO_REMOTE_TOKEN`. GitHub Actions billing and included usage can change by plan and policy, so operators should check the current GitHub documentation rather than treating a historical free/minute allowance as part of repo-remote's contract.
+
+Issue events can still create workflow runs even when the privileged job is skipped by authorization or label gates. The explicit command label, actor checks, five-minute timeout, and per-Issue concurrency limit reduce accidental or abusive work, but they do not make a public Issue tracker free of event-spam risk. For a control repository that attracts unwanted traffic, use GitHub's repository moderation/settings in addition to repo-remote's execution gates.
+
+For the PAT, prefer a short practical expiry, rotate it periodically, and revoke it immediately after suspected exposure. Replace the `REPO_REMOTE_TOKEN` secret after rotation; never temporarily widen the token to **All repositories** merely to avoid maintaining Selected-repository scope. For installations where every mutation should receive human approval, move the secret into a protected Environment with required reviewers.
+
+The repository also checks in CODEOWNERS coverage for the workflow/parser/schema/security boundaries, weekly Dependabot checks for GitHub Actions, full-SHA Action pins, and CodeQL analysis. Recommended `main` branch protection is documented in [SECURITY.md](SECURITY.md); repository-host settings remain separate from the checked-in policy and must be configured by the repository owner.
 
 ## Why Issues?
 
@@ -218,10 +232,15 @@ The Issue history is also a useful operation log: every requested operation rema
 ## Files
 
 ```text
+.github/CODEOWNERS                 # review ownership for policy boundaries
+.github/dependabot.yml             # weekly GitHub Actions dependency updates
 .github/workflows/repo-remote.yml  # authorized Issue → Actions bridge
 .github/workflows/ci.yml           # dependency-free parser/security tests
+.github/workflows/codeql.yml       # static analysis
 schemas/command-v1.schema.json     # versioned command policy
 scripts/command.mjs                # schema + semantic validation
+scripts/limits.mjs                 # Issue-body / JSON complexity guards
+scripts/audit.mjs                  # bounded request fingerprint + audit hints
 scripts/validate-command-cli.mjs   # validation step without PAT
 scripts/apply-command.mjs          # command dispatcher + GitHub REST mutations
 scripts/wiki.mjs                   # bounded Git-backed Wiki read/list/upsert runtime
