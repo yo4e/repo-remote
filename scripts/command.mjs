@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { assertCommandBodySize, assertJsonComplexity } from './limits.mjs';
 import { assertWikiCommitMessage, assertWikiContent, normalizeWikiPage } from './wiki.mjs';
 
 const SCHEMA_URL = new URL('../schemas/command-v1.schema.json', import.meta.url);
@@ -201,12 +202,16 @@ function parseWikiOperation(command) {
 }
 
 export function parseCommandPacket(body, owner) {
+  assertCommandBodySize(body);
+
   let command;
   try {
     command = JSON.parse(body);
   } catch (error) {
     throw new Error(`Issue body must be valid JSON (${error.message})`);
   }
+
+  assertJsonComplexity(command);
 
   const schemaErrors = validateSchema(command, COMMAND_SCHEMA);
   if (schemaErrors.length > 0) {
@@ -283,11 +288,13 @@ export function parseCommandPacket(body, owner) {
     hasBranchCleanup && 'branch_cleanup',
     wikiOperation && wikiOperation.operation,
   ].filter(Boolean);
+  const operation = wikiOperation?.operation || (hasBranchCleanup ? 'branch_cleanup' : 'metadata.update');
 
   return {
     command,
     repo,
     target: `${owner}/${repo}`,
+    operation,
     changed,
     topics,
     branchCleanup: hasBranchCleanup
