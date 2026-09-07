@@ -13,6 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Safe merged-branch cleanup with explicit confirmation and PR-based merge evidence.
 - Git-backed Wiki `list`, `read`, and `upsert` operations with traversal guards, bounded content, credential redaction, and fixed derived remotes.
 - Security documentation, regression tests, and pinned third-party Actions.
+- Global command resource limits for Issue-body bytes, JSON depth, and JSON node count.
+- Structured audit evidence with validated success metadata, bounded failure hints, payload fingerprints, and run links.
+- CODEOWNERS coverage, weekly GitHub Actions Dependabot updates, and CodeQL analysis.
 
 ### Fixed
 
@@ -21,3 +24,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Deferred
 
 - Live Wiki write rollout is intentionally deferred while a lower-friction, lower-blast-radius authentication model is evaluated.
+- OpenSSF Scorecard remains optional until a broader public release or external-consumer need justifies the extra workflow/publishing surface.
